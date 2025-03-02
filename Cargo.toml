@@ -1,0 +1,10 @@
+[package]
+name = "dungeon_of_madness"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+bevy = "0.15"
+bevy-inspector-egui = "0.29"
+#shieldtank = { git = "https://github.com/stinkytoe/shieldtank.git" }
+shieldtank = { path = "../shieldtank/" }
