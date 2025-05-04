@@ -2,8 +2,6 @@ use core::f32;
 
 use bevy::prelude::*;
 use bevy::window::WindowMode;
-use bevy_inspector_egui::bevy_egui::EguiPlugin;
-use bevy_inspector_egui::quick::WorldInspectorPlugin;
 use shieldtank::bevy_ldtk_asset::iid::{iid, Iid};
 use shieldtank::component::entity::LdtkEntity;
 use shieldtank::component::global_bounds::LdtkGlobalBounds;
@@ -20,7 +18,7 @@ use tinyrand::{Rand as _, StdRand};
 const WINDOW_RESOLUTION: Vec2 = Vec2::new(1280.0, 960.0);
 const PROJECT_FILE: &str = "ldtk/dungeon_of_madness.ldtk";
 const SKELETON_IID: Iid = iid!("4be48e10-e920-11ef-b902-6dc2806b1269");
-const PLAYER_MOVE_SPEED: f32 = 40.0;
+const PLAYER_MOVE_SPEED: f32 = 90.0;
 const LEVEL_SIZE: f32 = 144.0;
 
 #[derive(Component, Reflect)]
@@ -302,10 +300,6 @@ fn main() {
             .set(image_plugin_settings)
             .set(asset_plugin_settings),
         ShieldtankPlugins,
-        EguiPlugin {
-            enable_multipass_for_primary_context: true,
-        },
-        WorldInspectorPlugin::default(),
     ));
 
     app.add_systems(Startup, setup);
