@@ -21,11 +21,6 @@ const SKELETON_IID: Iid = iid!("4be48e10-e920-11ef-b902-6dc2806b1269");
 const PLAYER_MOVE_SPEED: f32 = 90.0;
 const LEVEL_SIZE: f32 = 144.0;
 
-#[derive(Component, Reflect)]
-struct PlayerMove {
-    target: Vec2,
-}
-
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn((
         Camera2d,
@@ -39,38 +34,6 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         },
         Transform::default(),
     ));
-
-    // commands.spawn((
-    //     LdtkLevel {
-    //         handle: asset_server.load(format!("{PROJECT_FILE}#worlds:Dungeon/Level_11")),
-    //         ..Default::default()
-    //     },
-    //     Transform::default().with_translation(Vec3::new(0.0, LEVEL_SIZE, 0.0)),
-    // ));
-    //
-    // commands.spawn((
-    //     LdtkLevel {
-    //         handle: asset_server.load(format!("{PROJECT_FILE}#worlds:Dungeon/Level_13")),
-    //         ..Default::default()
-    //     },
-    //     Transform::default().with_translation(Vec3::new(-LEVEL_SIZE, 0.0, 0.0)),
-    // ));
-    //
-    // commands.spawn((
-    //     LdtkLevel {
-    //         handle: asset_server.load(format!("{PROJECT_FILE}#worlds:Dungeon/Level_7")),
-    //         ..Default::default()
-    //     },
-    //     Transform::default().with_translation(Vec3::new(LEVEL_SIZE, 0.0, 0.0)),
-    // ));
-    //
-    // commands.spawn((
-    //     LdtkLevel {
-    //         handle: asset_server.load(format!("{PROJECT_FILE}#worlds:Dungeon/Level_14")),
-    //         ..Default::default()
-    //     },
-    //     Transform::default().with_translation(Vec3::new(0.0, -LEVEL_SIZE, 0.0)),
-    // ));
 }
 
 fn camera_follow_skeleton(
