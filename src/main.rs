@@ -8,8 +8,16 @@ use tinyrand::{Rand as _, StdRand};
 const WINDOW_RESOLUTION: UVec2 = UVec2::new(1280, 960);
 const PROJECT_FILE: &str = "ldtk/dungeon_of_madness.ldtk";
 const SKELETON_IID: Iid = iid!("4be48e10-e920-11ef-b902-6dc2806b1269");
+const START_HALL_IID: Iid = iid!("29c72090-1030-11f0-8f0e-c7ebf6f05d5f");
 const PLAYER_MOVE_SPEED: f32 = 90.0;
 const LEVEL_SIZE: f32 = 144.0;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, States)]
+enum GameState {
+    #[default]
+    Loading,
+    Playing,
+}
 
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn((
@@ -24,6 +32,31 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         },
         Transform::default(),
     ));
+}
+
+fn wait_for_level(
+    skeleton_query: Query<(&ShieldtankEntity, &ShieldtankIid)>,
+    level_query: Query<(&ShieldtankLevel, &ShieldtankIid)>,
+    asset_server: Res<AssetServer>,
+    mut next_state: ResMut<NextState<GameState>>,
+) {
+    let skeleton_is_loaded = skeleton_query
+        .iter()
+        .find(|(_, &iid)| *iid == SKELETON_IID)
+        .map(|(skeleton, _)| &skeleton.handle)
+        .iter()
+        .any(|&id| asset_server.is_loaded(id));
+
+    let start_hall_is_loaded = level_query
+        .iter()
+        .find(|(_, &iid)| *iid == START_HALL_IID)
+        .map(|(start_hall, _)| &start_hall.handle)
+        .iter()
+        .any(|&id| asset_server.is_loaded(id));
+
+    if skeleton_is_loaded && start_hall_is_loaded {
+        next_state.set(GameState::Playing);
+    }
 }
 
 #[allow(clippy::type_complexity)]
@@ -130,9 +163,7 @@ fn player_keyboard_commands(
 
 #[allow(clippy::type_complexity)]
 fn level_spawn_system(
-    // level_query: LdtkLevelQuery<&Name>,
     level_query: Query<(&Name, &ShieldtankGlobalBounds), With<ShieldtankLevel>>,
-    // skeleton_query: LdtkEntityQuery<LdtkLocation, Changed<GlobalTransform>>,
     skeleton_query: Query<
         (ShieldtankLocation, &ShieldtankIid),
         (With<ShieldtankEntity>, Changed<GlobalTransform>),
@@ -270,7 +301,11 @@ fn main() {
             .add_plugins(WorldInspectorPlugin::default());
     }
 
+    app.init_state::<GameState>();
+
     app.add_systems(Startup, setup);
+
+    app.add_systems(Update, wait_for_level.run_if(in_state(GameState::Loading)));
 
     app.add_systems(
         Update,
@@ -278,7 +313,8 @@ fn main() {
             camera_follow_skeleton,
             player_keyboard_commands,
             level_spawn_system,
-        ),
+        )
+            .run_if(in_state(GameState::Playing)),
     );
 
     app.run();
