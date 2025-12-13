@@ -1,5 +1,6 @@
 use core::f32;
 
+use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 use bevy::window::WindowMode;
 use shieldtank::prelude::*;
@@ -11,6 +12,10 @@ const SKELETON_IID: Iid = iid!("4be48e10-e920-11ef-b902-6dc2806b1269");
 const START_HALL_IID: Iid = iid!("29c72090-1030-11f0-8f0e-c7ebf6f05d5f");
 const PLAYER_MOVE_SPEED: f32 = 90.0;
 const LEVEL_SIZE: f32 = 144.0;
+const CAMERA_ZOOM_DEFAULT: f32 = 0.4;
+const CAMERA_ZOOM_SPEED: f32 = 3.0;
+const CAMERA_ZOOM_MIN: f32 = 0.1;
+const CAMERA_ZOOM_MAX: f32 = 2.0;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, States)]
 enum GameState {
@@ -22,7 +27,7 @@ enum GameState {
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands.spawn((
         Camera2d,
-        Transform::default().with_scale(Vec2::splat(0.4).extend(1.0)),
+        Transform::default().with_scale(Vec2::splat(CAMERA_ZOOM_DEFAULT).extend(1.0)),
     ));
 
     commands.spawn((
@@ -76,6 +81,18 @@ fn camera_follow_skeleton(
 
     let camera_z = camera_transform.translation.z;
     camera_transform.translation = skeleton_transform.translation.with_z(camera_z);
+}
+
+fn camera_zoom_commands(
+    time: Res<Time>,
+    mut camera: Single<&mut Transform, With<Camera2d>>,
+    mut mouse_scroll: MessageReader<MouseWheel>,
+) {
+    for scroll_message in mouse_scroll.read() {
+        let scroll_amount = scroll_message.y.signum() * time.delta_secs() * CAMERA_ZOOM_SPEED;
+        let new_zoom = (camera.scale.x - scroll_amount).clamp(CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX);
+        camera.scale = Vec2::splat(new_zoom).extend(1.0);
+    }
 }
 
 fn player_keyboard_commands(
@@ -311,6 +328,7 @@ fn main() {
         Update,
         (
             camera_follow_skeleton,
+            camera_zoom_commands,
             player_keyboard_commands,
             level_spawn_system,
         )
