@@ -4,9 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-bevy = "0.16"
+bevy = "0.17"
 
 tinyrand = "0.5"
+
+bevy-inspector-egui = "0.35"
 
 shieldtank = { git = "https://github.com/stinkytoe/shieldtank.git" }
 #shieldtank = { path = "../shieldtank/" }

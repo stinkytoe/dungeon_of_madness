@@ -2,20 +2,10 @@ use core::f32;
 
 use bevy::prelude::*;
 use bevy::window::WindowMode;
-use shieldtank::bevy_ldtk_asset::iid::{iid, Iid};
-use shieldtank::component::entity::LdtkEntity;
-use shieldtank::component::global_bounds::LdtkGlobalBounds;
-use shieldtank::component::level::LdtkLevel;
-use shieldtank::component::tile::LdtkTile;
-use shieldtank::debug_gizmos::DebugGizmos;
-use shieldtank::plugin::ShieldtankPlugins;
-use shieldtank::query::entity::LdtkEntityQuery;
-use shieldtank::query::grid_value::GridValueQuery;
-use shieldtank::query::level::LdtkLevelQuery;
-use shieldtank::query::location::{LdtkLocation, LdtkLocationMut};
+use shieldtank::prelude::*;
 use tinyrand::{Rand as _, StdRand};
 
-const WINDOW_RESOLUTION: Vec2 = Vec2::new(1280.0, 960.0);
+const WINDOW_RESOLUTION: UVec2 = UVec2::new(1280, 960);
 const PROJECT_FILE: &str = "ldtk/dungeon_of_madness.ldtk";
 const SKELETON_IID: Iid = iid!("4be48e10-e920-11ef-b902-6dc2806b1269");
 const PLAYER_MOVE_SPEED: f32 = 90.0;
@@ -28,19 +18,26 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     ));
 
     commands.spawn((
-        LdtkLevel {
-            handle: asset_server.load(format!("{PROJECT_FILE}#worlds:Dungeon/Start_Hall")),
+        ShieldtankLevel {
+            handle: asset_server.load(format!("{PROJECT_FILE}#world:Dungeon/Start_Hall")),
             ..Default::default()
         },
         Transform::default(),
     ));
 }
 
+#[allow(clippy::type_complexity)]
 fn camera_follow_skeleton(
-    skeleton_query: LdtkEntityQuery<&Transform>,
-    mut camera_transform: Single<&mut Transform, (With<Camera2d>, Without<LdtkEntity>)>,
+    skeleton_query: Query<
+        (&Transform, &ShieldtankIid),
+        (With<ShieldtankEntity>, Without<Camera2d>),
+    >,
+    mut camera_transform: Single<&mut Transform, With<Camera2d>>,
 ) {
-    let Some(skeleton_transform) = skeleton_query.get_iid(SKELETON_IID) else {
+    let Some((skeleton_transform, _)) = skeleton_query
+        .iter()
+        .find(|(_, &ldtk_iid)| *ldtk_iid == SKELETON_IID)
+    else {
         return;
     };
 
@@ -52,18 +49,27 @@ fn player_keyboard_commands(
     time: Res<Time>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     grid_query: GridValueQuery,
-    level_query: LdtkLevelQuery<()>,
-    mut skeleton_query: LdtkEntityQuery<(&LdtkGlobalBounds, &mut LdtkTile, LdtkLocationMut)>,
+    level_query: Query<&ShieldtankGlobalBounds, With<ShieldtankLevel>>,
+    mut skeleton_query: Query<
+        (
+            &ShieldtankGlobalBounds,
+            &mut ShieldtankTile,
+            ShieldtankLocationMut,
+            &ShieldtankIid,
+        ),
+        With<ShieldtankEntity>,
+    >,
 ) {
-    let Some((global_bounds, mut tile, mut location)) = skeleton_query.get_iid_mut(SKELETON_IID)
+    let Some((global_bounds, mut tile, mut location, _)) = skeleton_query
+        .iter_mut()
+        .find(|&(_, _, _, ldtk_iid)| *ldtk_iid == SKELETON_IID)
     else {
         return;
     };
 
-    if level_query
-        .location_in_bounds(location.get())
-        .next()
-        .is_none()
+    if !level_query
+        .iter()
+        .any(|global_bounds| global_bounds.contains(location.get()))
     {
         return;
     }
@@ -73,33 +79,34 @@ fn player_keyboard_commands(
     let down_pressed = keyboard_input.any_pressed([KeyCode::ArrowDown, KeyCode::KeyS]);
     let left_pressed = keyboard_input.any_pressed([KeyCode::ArrowLeft, KeyCode::KeyA]);
 
-    let dir = match (up_pressed, right_pressed, down_pressed, left_pressed) {
-        (true, false, false, false) => Vec2::new(0.0, 1.0),
-        (true, true, false, false) => {
-            tile.flip_x(false);
-            Vec2::new(f32::consts::FRAC_1_SQRT_2, f32::consts::FRAC_1_SQRT_2)
-        }
-        (false, true, false, false) => {
-            tile.flip_x(false);
-            Vec2::new(1.0, 0.0)
-        }
-        (false, true, true, false) => {
-            tile.flip_x(false);
-            Vec2::new(f32::consts::FRAC_1_SQRT_2, -f32::consts::FRAC_1_SQRT_2)
-        }
-        (false, false, true, false) => Vec2::new(0.0, -1.0),
-        (false, false, true, true) => {
-            tile.flip_x(true);
-            Vec2::new(-f32::consts::FRAC_1_SQRT_2, -f32::consts::FRAC_1_SQRT_2)
-        }
-        (false, false, false, true) => {
-            tile.flip_x(true);
-            Vec2::new(-1.0, 0.0)
-        }
-        (true, false, false, true) => {
-            tile.flip_x(true);
-            Vec2::new(-f32::consts::FRAC_1_SQRT_2, f32::consts::FRAC_1_SQRT_2)
-        }
+    const UP: (bool, bool, bool, bool) = (true, false, false, false);
+    const UP_RIGHT: (bool, bool, bool, bool) = (true, true, false, false);
+    const RIGHT: (bool, bool, bool, bool) = (false, true, false, false);
+    const DOWN_RIGHT: (bool, bool, bool, bool) = (false, true, true, false);
+    const DOWN: (bool, bool, bool, bool) = (false, false, true, false);
+    const DOWN_LEFT: (bool, bool, bool, bool) = (false, false, true, true);
+    const LEFT: (bool, bool, bool, bool) = (false, false, false, true);
+    const UP_LEFT: (bool, bool, bool, bool) = (true, false, false, true);
+
+    let dir = (up_pressed, right_pressed, down_pressed, left_pressed);
+
+    // Do we need to flip the sprite?
+    match dir {
+        UP_RIGHT | RIGHT | DOWN_RIGHT => tile.flip_x(false),
+        UP_LEFT | LEFT | DOWN_LEFT => tile.flip_x(true),
+        _ => {}
+    };
+
+    // Construct a direction vector
+    let dir = match dir {
+        UP => Vec2::new(0.0, 1.0),
+        UP_RIGHT => Vec2::new(f32::consts::FRAC_1_SQRT_2, f32::consts::FRAC_1_SQRT_2),
+        RIGHT => Vec2::new(1.0, 0.0),
+        DOWN_RIGHT => Vec2::new(f32::consts::FRAC_1_SQRT_2, -f32::consts::FRAC_1_SQRT_2),
+        DOWN => Vec2::new(0.0, -1.0),
+        DOWN_LEFT => Vec2::new(-f32::consts::FRAC_1_SQRT_2, -f32::consts::FRAC_1_SQRT_2),
+        LEFT => Vec2::new(-1.0, 0.0),
+        UP_LEFT => Vec2::new(-f32::consts::FRAC_1_SQRT_2, f32::consts::FRAC_1_SQRT_2),
         _ => return,
     };
 
@@ -121,23 +128,31 @@ fn player_keyboard_commands(
     }
 }
 
+#[allow(clippy::type_complexity)]
 fn level_spawn_system(
-    level_query: LdtkLevelQuery<&Name>,
-    skeleton_query: LdtkEntityQuery<LdtkLocation, Changed<GlobalTransform>>,
+    // level_query: LdtkLevelQuery<&Name>,
+    level_query: Query<(&Name, &ShieldtankGlobalBounds), With<ShieldtankLevel>>,
+    // skeleton_query: LdtkEntityQuery<LdtkLocation, Changed<GlobalTransform>>,
+    skeleton_query: Query<
+        (ShieldtankLocation, &ShieldtankIid),
+        (With<ShieldtankEntity>, Changed<GlobalTransform>),
+    >,
     asset_server: Res<AssetServer>,
     mut rand: Local<StdRand>,
     mut commands: Commands,
 ) {
-    let Some(skeleton_location) = skeleton_query.get_iid(SKELETON_IID) else {
+    let Some((skeleton_location, _)) = skeleton_query
+        .iter()
+        .find(|&(_, ldtk_iid)| *ldtk_iid == SKELETON_IID)
+    else {
         return;
     };
 
     let skeleton_location = skeleton_location.get();
 
     if level_query
-        .location_in_bounds(skeleton_location)
-        .next()
-        .is_some()
+        .iter()
+        .any(|(_, global_bounds)| global_bounds.contains(skeleton_location))
     {
         return;
     }
@@ -155,7 +170,10 @@ fn level_spawn_system(
 
     let level_code_at = |grid: IVec2| -> Option<usize> {
         let center = (grid.as_vec2() * LEVEL_SIZE) + center_offset;
-        let level_at = level_query.location_in_bounds(center).next();
+        let level_at = level_query
+            .iter()
+            .find(|(_, global_bounds)| global_bounds.contains(center))
+            .map(|(name, _)| name);
         match &level_at {
             Some(name) if name.as_str() == "Start_Hall" => Some(0),
             Some(name) => name[6..].parse::<usize>().ok(),
@@ -191,37 +209,16 @@ fn level_spawn_system(
     fix_rand_by_code(west_code, WEST_WALL, EAST_WALL);
     fix_rand_by_code(south_code, SOUTH_WALL, NORTH_WALL);
 
-    let new_level_asset_label = format!("{PROJECT_FILE}#worlds:Dungeon/Level_{rand}");
+    let new_level_asset_label = format!("{PROJECT_FILE}#world:Dungeon/Level_{rand}");
     let spawn_corner = level_grid.as_vec2() * LEVEL_SIZE;
 
     commands.spawn((
-        LdtkLevel {
+        ShieldtankLevel {
             handle: asset_server.load(new_level_asset_label),
             ..Default::default()
         },
         Transform::default().with_translation(spawn_corner.extend(0.0)),
     ));
-}
-
-fn debug_keyboard_commands(
-    keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut debug_gizmos: ResMut<DebugGizmos>,
-) {
-    if keyboard_input.just_pressed(KeyCode::F1) {
-        debug_gizmos.level_gizmos = !debug_gizmos.level_gizmos;
-    }
-
-    if keyboard_input.just_pressed(KeyCode::F2) {
-        debug_gizmos.layer_gizmos = !debug_gizmos.layer_gizmos;
-    }
-
-    if keyboard_input.just_pressed(KeyCode::F3) {
-        debug_gizmos.grid_values_query = !debug_gizmos.grid_values_query;
-    }
-
-    if keyboard_input.just_pressed(KeyCode::F4) {
-        debug_gizmos.entity_gizmos = !debug_gizmos.entity_gizmos;
-    }
 }
 
 fn main() {
@@ -265,6 +262,14 @@ fn main() {
         ShieldtankPlugins,
     ));
 
+    #[cfg(debug_assertions)]
+    {
+        use bevy_inspector_egui::bevy_egui::EguiPlugin;
+        use bevy_inspector_egui::quick::WorldInspectorPlugin;
+        app.add_plugins(EguiPlugin::default())
+            .add_plugins(WorldInspectorPlugin::default());
+    }
+
     app.add_systems(Startup, setup);
 
     app.add_systems(
@@ -273,7 +278,6 @@ fn main() {
             camera_follow_skeleton,
             player_keyboard_commands,
             level_spawn_system,
-            debug_keyboard_commands,
         ),
     );
 
