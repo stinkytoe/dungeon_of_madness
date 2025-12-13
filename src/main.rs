@@ -1,8 +1,8 @@
 use core::f32;
 
-use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
 use bevy::window::WindowMode;
+use bevy::{color::palettes::tailwind::GRAY_500, input::mouse::MouseWheel};
 use shieldtank::prelude::*;
 use tinyrand::{Rand as _, StdRand};
 
@@ -36,6 +36,24 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             ..Default::default()
         },
         Transform::default(),
+    ));
+
+    commands.spawn((
+        Text::new("Movement: WASD or Arrow Keys\nZoom in/out: Mouse Scroll"),
+        TextFont {
+            font: asset_server.load("fonts/IMMORTAL.ttf"),
+            font_size: 22.0,
+            ..Default::default()
+        },
+        TextColor(GRAY_500.into()),
+        TextLayout::new_with_justify(Justify::Center),
+        Node {
+            position_type: PositionType::Absolute,
+            bottom: Val::Px(40.0),
+            left: Val::Px(5.0),
+            right: Val::Px(5.0),
+            ..default()
+        },
     ));
 }
 
