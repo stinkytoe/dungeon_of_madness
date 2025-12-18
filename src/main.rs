@@ -58,26 +58,12 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
 }
 
 fn wait_for_level(
-    skeleton_query: Query<(&ShieldtankEntity, &ShieldtankIid)>,
-    level_query: Query<(&ShieldtankLevel, &ShieldtankIid)>,
-    asset_server: Res<AssetServer>,
+    level_query: QueryByIid<(), (With<ShieldtankLevel>, With<ShieldtankGlobalBounds>)>,
     mut next_state: ResMut<NextState<GameState>>,
 ) {
-    let skeleton_is_loaded = skeleton_query
-        .iter()
-        .find(|(_, &iid)| *iid == SKELETON_IID)
-        .map(|(skeleton, _)| &skeleton.handle)
-        .iter()
-        .any(|&id| asset_server.is_loaded(id));
+    let start_hall_is_loaded = level_query.get(START_HALL_IID).is_some();
 
-    let start_hall_is_loaded = level_query
-        .iter()
-        .find(|(_, &iid)| *iid == START_HALL_IID)
-        .map(|(start_hall, _)| &start_hall.handle)
-        .iter()
-        .any(|&id| asset_server.is_loaded(id));
-
-    if skeleton_is_loaded && start_hall_is_loaded {
+    if start_hall_is_loaded {
         next_state.set(GameState::Playing);
     }
 }
@@ -330,10 +316,10 @@ fn main() {
 
     #[cfg(debug_assertions)]
     {
-        use bevy_inspector_egui::bevy_egui::EguiPlugin;
-        use bevy_inspector_egui::quick::WorldInspectorPlugin;
-        app.add_plugins(EguiPlugin::default())
-            .add_plugins(WorldInspectorPlugin::default());
+        // use bevy_inspector_egui::bevy_egui::EguiPlugin;
+        // use bevy_inspector_egui::quick::WorldInspectorPlugin;
+        // app.add_plugins(EguiPlugin::default())
+        //     .add_plugins(WorldInspectorPlugin::default());
     }
 
     app.init_state::<GameState>();
