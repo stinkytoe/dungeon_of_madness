@@ -10,8 +10,8 @@ tinyrand = "0.5"
 
 #bevy-inspector-egui = "0.35"
 
-shieldtank = { git = "https://github.com/stinkytoe/shieldtank.git" }
-#shieldtank = { path = "../shieldtank/" }
+#shieldtank = { git = "https://github.com/stinkytoe/shieldtank.git" }
+shieldtank = { path = "../shieldtank/" }
 
 # Enable a small amount of optimization in the dev profile.
 [profile.dev]

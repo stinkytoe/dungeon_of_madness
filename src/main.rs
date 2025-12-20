@@ -70,16 +70,10 @@ fn wait_for_level(
 
 #[allow(clippy::type_complexity)]
 fn camera_follow_skeleton(
-    skeleton_query: Query<
-        (&Transform, &ShieldtankIid),
-        (With<ShieldtankEntity>, Without<Camera2d>),
-    >,
+    skeleton_query: QueryByIid<&Transform, (With<ShieldtankEntity>, Without<Camera2d>)>,
     mut camera_transform: Single<&mut Transform, With<Camera2d>>,
 ) {
-    let Some((skeleton_transform, _)) = skeleton_query
-        .iter()
-        .find(|(_, &ldtk_iid)| *ldtk_iid == SKELETON_IID)
-    else {
+    let Some(skeleton_transform) = skeleton_query.get(SKELETON_IID) else {
         return;
     };
 
@@ -103,28 +97,21 @@ fn player_keyboard_commands(
     time: Res<Time>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
     grid_query: GridValueQuery,
-    level_query: Query<&ShieldtankGlobalBounds, With<ShieldtankLevel>>,
-    mut skeleton_query: Query<
+    level_query: QueryByGlobalBounds<(), With<ShieldtankLevel>>,
+    mut skeleton_query: QueryByIid<
         (
             &ShieldtankGlobalBounds,
             &mut ShieldtankTile,
             ShieldtankLocationMut,
-            &ShieldtankIid,
         ),
         With<ShieldtankEntity>,
     >,
 ) {
-    let Some((global_bounds, mut tile, mut location, _)) = skeleton_query
-        .iter_mut()
-        .find(|&(_, _, _, ldtk_iid)| *ldtk_iid == SKELETON_IID)
-    else {
+    let Some((global_bounds, mut tile, mut location)) = skeleton_query.get_mut(SKELETON_IID) else {
         return;
     };
 
-    if !level_query
-        .iter()
-        .any(|global_bounds| global_bounds.contains(location.get()))
-    {
+    if !level_query.any(location.get()) {
         return;
     }
 
@@ -184,28 +171,22 @@ fn player_keyboard_commands(
 
 #[allow(clippy::type_complexity)]
 fn level_spawn_system(
-    level_query: Query<(&Name, &ShieldtankGlobalBounds), With<ShieldtankLevel>>,
-    skeleton_query: Query<
-        (ShieldtankLocation, &ShieldtankIid),
+    level_query: QueryByGlobalBounds<&Name, With<ShieldtankLevel>>,
+    skeleton_query: QueryByIid<
+        ShieldtankLocation,
         (With<ShieldtankEntity>, Changed<GlobalTransform>),
     >,
     asset_server: Res<AssetServer>,
     mut rand: Local<StdRand>,
     mut commands: Commands,
 ) {
-    let Some((skeleton_location, _)) = skeleton_query
-        .iter()
-        .find(|&(_, ldtk_iid)| *ldtk_iid == SKELETON_IID)
-    else {
+    let Some(skeleton_location) = skeleton_query.get(SKELETON_IID) else {
         return;
     };
 
     let skeleton_location = skeleton_location.get();
 
-    if level_query
-        .iter()
-        .any(|(_, global_bounds)| global_bounds.contains(skeleton_location))
-    {
+    if level_query.any(skeleton_location) {
         return;
     }
 
@@ -222,10 +203,7 @@ fn level_spawn_system(
 
     let level_code_at = |grid: IVec2| -> Option<usize> {
         let center = (grid.as_vec2() * LEVEL_SIZE) + center_offset;
-        let level_at = level_query
-            .iter()
-            .find(|(_, global_bounds)| global_bounds.contains(center))
-            .map(|(name, _)| name);
+        let level_at = level_query.by_location(center).next();
         match &level_at {
             Some(name) if name.as_str() == "Start_Hall" => Some(0),
             Some(name) => name[6..].parse::<usize>().ok(),
