@@ -7,21 +7,48 @@ use shieldtank::prelude::*;
 use tinyrand::{Rand as _, StdRand};
 
 const WINDOW_RESOLUTION: UVec2 = UVec2::new(1280, 960);
+
 const PROJECT_FILE: &str = "ldtk/dungeon_of_madness.ldtk";
 const SKELETON_IID: Iid = iid!("4be48e10-e920-11ef-b902-6dc2806b1269");
 const START_HALL_IID: Iid = iid!("29c72090-1030-11f0-8f0e-c7ebf6f05d5f");
-const PLAYER_MOVE_SPEED: f32 = 90.0;
 const LEVEL_SIZE: f32 = 144.0;
+
+const PLAYER_MOVE_SPEED: f32 = 90.0;
+
 const CAMERA_ZOOM_DEFAULT: f32 = 0.4;
 const CAMERA_ZOOM_SPEED: f32 = 3.0;
 const CAMERA_ZOOM_MIN: f32 = 0.1;
 const CAMERA_ZOOM_MAX: f32 = 2.0;
+
+const LEVEL_UP: Vec2 = Vec2::new(0.0, LEVEL_SIZE);
+const LEVEL_RIGHT: Vec2 = Vec2::new(LEVEL_SIZE, 0.0);
+const LEVEL_DOWN: Vec2 = Vec2::new(0.0, -LEVEL_SIZE);
+const LEVEL_LEFT: Vec2 = Vec2::new(-LEVEL_SIZE, 0.0);
+
+const WALL_UP: u16 = 0x1;
+const WALL_RIGHT: u16 = 0x2;
+const WALL_DOWN: u16 = 0x4;
+const WALL_LEFT: u16 = 0x8;
+
+#[derive(Resource, Deref, DerefMut)]
+struct CurrentLevel(Entity);
+
+#[derive(Event, Deref)]
+struct AttemptSpawnLevel(Vec2);
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, States)]
 enum GameState {
     #[default]
     Loading,
     Playing,
+}
+
+fn parse_level_code(level_name: &str) -> u16 {
+    if level_name == "Start_Hall" {
+        0
+    } else {
+        level_name[6..].parse().expect("bad level name?")
+    }
 }
 
 fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
@@ -57,17 +84,6 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
     ));
 }
 
-fn wait_for_level(
-    level_query: QueryByIid<(), (With<ShieldtankLevel>, With<ShieldtankGlobalBounds>)>,
-    mut next_state: ResMut<NextState<GameState>>,
-) {
-    let start_hall_is_loaded = level_query.get(START_HALL_IID).is_some();
-
-    if start_hall_is_loaded {
-        next_state.set(GameState::Playing);
-    }
-}
-
 #[allow(clippy::type_complexity)]
 fn camera_follow_skeleton(
     skeleton_query: QueryByIid<&Transform, (With<ShieldtankEntity>, Without<Camera2d>)>,
@@ -91,6 +107,138 @@ fn camera_zoom_commands(
         let new_zoom = (camera.scale.x - scroll_amount).clamp(CAMERA_ZOOM_MIN, CAMERA_ZOOM_MAX);
         camera.scale = Vec2::splat(new_zoom).extend(1.0);
     }
+}
+
+fn wait_for_level(
+    level_query: QueryByIid<Entity, (With<ShieldtankLevel>, With<ShieldtankGlobalBounds>)>,
+    mut next_state: ResMut<NextState<GameState>>,
+    mut commands: Commands,
+) {
+    if let Some(start_hall) = level_query.get(START_HALL_IID) {
+        commands.insert_resource(CurrentLevel(start_hall));
+
+        commands.trigger(AttemptSpawnLevel(LEVEL_UP));
+        commands.trigger(AttemptSpawnLevel(LEVEL_RIGHT));
+        commands.trigger(AttemptSpawnLevel(LEVEL_DOWN));
+        commands.trigger(AttemptSpawnLevel(LEVEL_LEFT));
+
+        next_state.set(GameState::Playing);
+    }
+}
+
+fn track_current_level(
+    skeleton_query: QueryByIid<
+        ShieldtankLocation,
+        (With<ShieldtankEntity>, Changed<GlobalTransform>),
+    >,
+    level_query: QueryByGlobalBounds<(Entity, &Name, ShieldtankLocation), With<ShieldtankLevel>>,
+    mut current_level: ResMut<CurrentLevel>,
+    mut commands: Commands,
+) {
+    let Some(skeleton_location) = skeleton_query.get(SKELETON_IID) else {
+        return;
+    };
+
+    let Some((level_under_skeleton, level_name, level_location)) =
+        level_query.by_location(skeleton_location.get()).next()
+    else {
+        info!("Skeleton is walking in space!");
+        return;
+    };
+
+    if level_under_skeleton != **current_level {
+        info!("Skeleton has wandered into a new level! {level_name}");
+        **current_level = level_under_skeleton;
+
+        let level_location = level_location.get();
+
+        let level_code = parse_level_code(level_name);
+
+        if level_code & WALL_UP == 0 {
+            commands.trigger(AttemptSpawnLevel(level_location + LEVEL_UP));
+        }
+
+        if level_code & WALL_RIGHT == 0 {
+            commands.trigger(AttemptSpawnLevel(level_location + LEVEL_RIGHT));
+        }
+
+        if level_code & WALL_DOWN == 0 {
+            commands.trigger(AttemptSpawnLevel(level_location + LEVEL_DOWN));
+        }
+
+        if level_code & WALL_LEFT == 0 {
+            commands.trigger(AttemptSpawnLevel(level_location + LEVEL_LEFT));
+        }
+    }
+}
+
+fn attempt_spawn_level(
+    attemt_level_location: On<AttemptSpawnLevel>,
+    level_query: QueryByGlobalBounds<&Name, With<ShieldtankLevel>>,
+    asset_server: Res<AssetServer>,
+    mut rand: Local<StdRand>,
+    mut commands: Commands,
+) {
+    let attempt_level_location: Vec2 = **attemt_level_location;
+    info!("Attempting spawn level at: {attempt_level_location}");
+
+    const CENTER_OFFSET: Vec2 = Vec2::new(LEVEL_SIZE / 2.0, -LEVEL_SIZE / 2.0);
+
+    if level_query
+        .by_location(attempt_level_location + CENTER_OFFSET)
+        .next()
+        .is_some()
+    {
+        return;
+    }
+
+    let level_up_code = level_query
+        .by_location(attempt_level_location + CENTER_OFFSET + LEVEL_UP)
+        .next()
+        .map(|level_name| parse_level_code(level_name));
+
+    let level_right_code = level_query
+        .by_location(attempt_level_location + CENTER_OFFSET + LEVEL_RIGHT)
+        .next()
+        .map(|level_name| parse_level_code(level_name));
+
+    let level_down_code = level_query
+        .by_location(attempt_level_location + CENTER_OFFSET + LEVEL_DOWN)
+        .next()
+        .map(|level_name| parse_level_code(level_name));
+
+    let level_left_code = level_query
+        .by_location(attempt_level_location + CENTER_OFFSET + LEVEL_LEFT)
+        .next()
+        .map(|level_name| parse_level_code(level_name));
+
+    let mut rand = rand.next_lim_u16(15);
+
+    let mut fix_rand_by_code = |code: Option<u16>, wall: u16, opposite_wall: u16| {
+        if let Some(code) = code {
+            let wall_at = code & opposite_wall;
+            if wall_at == 0 {
+                rand &= wall ^ 0xF;
+            } else {
+                rand |= wall;
+            }
+        }
+    };
+
+    fix_rand_by_code(level_up_code, WALL_UP, WALL_DOWN);
+    fix_rand_by_code(level_right_code, WALL_RIGHT, WALL_LEFT);
+    fix_rand_by_code(level_down_code, WALL_DOWN, WALL_UP);
+    fix_rand_by_code(level_left_code, WALL_LEFT, WALL_RIGHT);
+
+    let new_level_asset_label = format!("{PROJECT_FILE}#world:Dungeon/Level_{rand}");
+
+    commands.spawn((
+        ShieldtankLevel {
+            handle: asset_server.load(new_level_asset_label),
+            ..Default::default()
+        },
+        Transform::default().with_translation(attempt_level_location.extend(0.0)),
+    ));
 }
 
 fn player_keyboard_commands(
@@ -120,34 +268,34 @@ fn player_keyboard_commands(
     let down_pressed = keyboard_input.any_pressed([KeyCode::ArrowDown, KeyCode::KeyS]);
     let left_pressed = keyboard_input.any_pressed([KeyCode::ArrowLeft, KeyCode::KeyA]);
 
-    const UP: (bool, bool, bool, bool) = (true, false, false, false);
-    const UP_RIGHT: (bool, bool, bool, bool) = (true, true, false, false);
-    const RIGHT: (bool, bool, bool, bool) = (false, true, false, false);
-    const DOWN_RIGHT: (bool, bool, bool, bool) = (false, true, true, false);
-    const DOWN: (bool, bool, bool, bool) = (false, false, true, false);
-    const DOWN_LEFT: (bool, bool, bool, bool) = (false, false, true, true);
-    const LEFT: (bool, bool, bool, bool) = (false, false, false, true);
-    const UP_LEFT: (bool, bool, bool, bool) = (true, false, false, true);
+    const KEY_UP: (bool, bool, bool, bool) = (true, false, false, false);
+    const KEY_UP_RIGHT: (bool, bool, bool, bool) = (true, true, false, false);
+    const KEY_RIGHT: (bool, bool, bool, bool) = (false, true, false, false);
+    const KEY_DOWN_RIGHT: (bool, bool, bool, bool) = (false, true, true, false);
+    const KEY_DOWN: (bool, bool, bool, bool) = (false, false, true, false);
+    const KEY_DOWN_LEFT: (bool, bool, bool, bool) = (false, false, true, true);
+    const KEY_LEFT: (bool, bool, bool, bool) = (false, false, false, true);
+    const KEY_UP_LEFT: (bool, bool, bool, bool) = (true, false, false, true);
 
     let dir = (up_pressed, right_pressed, down_pressed, left_pressed);
 
     // Do we need to flip the sprite?
     match dir {
-        UP_RIGHT | RIGHT | DOWN_RIGHT => tile.flip_x(false),
-        UP_LEFT | LEFT | DOWN_LEFT => tile.flip_x(true),
+        KEY_UP_RIGHT | KEY_RIGHT | KEY_DOWN_RIGHT => tile.flip_x(false),
+        KEY_UP_LEFT | KEY_LEFT | KEY_DOWN_LEFT => tile.flip_x(true),
         _ => {}
     };
 
     // Construct a direction vector
     let dir = match dir {
-        UP => Vec2::new(0.0, 1.0),
-        UP_RIGHT => Vec2::new(f32::consts::FRAC_1_SQRT_2, f32::consts::FRAC_1_SQRT_2),
-        RIGHT => Vec2::new(1.0, 0.0),
-        DOWN_RIGHT => Vec2::new(f32::consts::FRAC_1_SQRT_2, -f32::consts::FRAC_1_SQRT_2),
-        DOWN => Vec2::new(0.0, -1.0),
-        DOWN_LEFT => Vec2::new(-f32::consts::FRAC_1_SQRT_2, -f32::consts::FRAC_1_SQRT_2),
-        LEFT => Vec2::new(-1.0, 0.0),
-        UP_LEFT => Vec2::new(-f32::consts::FRAC_1_SQRT_2, f32::consts::FRAC_1_SQRT_2),
+        KEY_UP => Vec2::new(0.0, 1.0),
+        KEY_UP_RIGHT => Vec2::new(f32::consts::FRAC_1_SQRT_2, f32::consts::FRAC_1_SQRT_2),
+        KEY_RIGHT => Vec2::new(1.0, 0.0),
+        KEY_DOWN_RIGHT => Vec2::new(f32::consts::FRAC_1_SQRT_2, -f32::consts::FRAC_1_SQRT_2),
+        KEY_DOWN => Vec2::new(0.0, -1.0),
+        KEY_DOWN_LEFT => Vec2::new(-f32::consts::FRAC_1_SQRT_2, -f32::consts::FRAC_1_SQRT_2),
+        KEY_LEFT => Vec2::new(-1.0, 0.0),
+        KEY_UP_LEFT => Vec2::new(-f32::consts::FRAC_1_SQRT_2, f32::consts::FRAC_1_SQRT_2),
         _ => return,
     };
 
@@ -169,94 +317,13 @@ fn player_keyboard_commands(
     }
 }
 
-#[allow(clippy::type_complexity)]
-fn level_spawn_system(
-    level_query: QueryByGlobalBounds<&Name, With<ShieldtankLevel>>,
-    skeleton_query: QueryByIid<
-        ShieldtankLocation,
-        (With<ShieldtankEntity>, Changed<GlobalTransform>),
-    >,
-    asset_server: Res<AssetServer>,
-    mut rand: Local<StdRand>,
-    mut commands: Commands,
-) {
-    let Some(skeleton_location) = skeleton_query.get(SKELETON_IID) else {
-        return;
-    };
-
-    let skeleton_location = skeleton_location.get();
-
-    if level_query.any(skeleton_location) {
-        return;
-    }
-
-    let level_corner = skeleton_location / LEVEL_SIZE;
-    let level_corner = level_corner.floor().as_ivec2();
-    let level_grid = level_corner - IVec2::new(0, -1);
-
-    let north_grid = level_grid + IVec2::new(0, 1);
-    let east_grid = level_grid + IVec2::new(1, 0);
-    let south_grid = level_grid + IVec2::new(0, -1);
-    let west_grid = level_grid + IVec2::new(-1, 0);
-
-    let center_offset: Vec2 = Vec2::new(LEVEL_SIZE, -LEVEL_SIZE) / 2.0;
-
-    let level_code_at = |grid: IVec2| -> Option<usize> {
-        let center = (grid.as_vec2() * LEVEL_SIZE) + center_offset;
-        let level_at = level_query.by_location(center).next();
-        match &level_at {
-            Some(name) if name.as_str() == "Start_Hall" => Some(0),
-            Some(name) => name[6..].parse::<usize>().ok(),
-            None => None,
-        }
-    };
-
-    let north_code = level_code_at(north_grid);
-    let east_code = level_code_at(east_grid);
-    let south_code = level_code_at(south_grid);
-    let west_code = level_code_at(west_grid);
-
-    let mut rand = rand.next_lim_usize(15);
-
-    const NORTH_WALL: usize = 0x1;
-    const EAST_WALL: usize = 0x2;
-    const SOUTH_WALL: usize = 0x4;
-    const WEST_WALL: usize = 0x8;
-
-    let mut fix_rand_by_code = |code: Option<usize>, wall: usize, opposite_wall: usize| {
-        if let Some(code) = code {
-            let wall_at = code & opposite_wall;
-            if wall_at == 0 {
-                rand &= wall ^ 0xF;
-            } else {
-                rand |= wall;
-            }
-        }
-    };
-
-    fix_rand_by_code(north_code, NORTH_WALL, SOUTH_WALL);
-    fix_rand_by_code(east_code, EAST_WALL, WEST_WALL);
-    fix_rand_by_code(west_code, WEST_WALL, EAST_WALL);
-    fix_rand_by_code(south_code, SOUTH_WALL, NORTH_WALL);
-
-    let new_level_asset_label = format!("{PROJECT_FILE}#world:Dungeon/Level_{rand}");
-    let spawn_corner = level_grid.as_vec2() * LEVEL_SIZE;
-
-    commands.spawn((
-        ShieldtankLevel {
-            handle: asset_server.load(new_level_asset_label),
-            ..Default::default()
-        },
-        Transform::default().with_translation(spawn_corner.extend(0.0)),
-    ));
-}
-
 fn main() {
     let log_plugin_settings = bevy::log::LogPlugin {
         level: bevy::log::Level::WARN,
         filter: "wgpu_hal=off,\
             winit=off,\
             bevy_winit=off,\
+            calloop=off,\
             bevy_ldtk_asset=info,\
             shieldtank=info,\
             dungeon_of_madness=debug"
@@ -311,11 +378,13 @@ fn main() {
         (
             camera_follow_skeleton,
             camera_zoom_commands,
+            track_current_level,
             player_keyboard_commands,
-            level_spawn_system,
         )
             .run_if(in_state(GameState::Playing)),
     );
+
+    app.add_observer(attempt_spawn_level);
 
     app.run();
 }
