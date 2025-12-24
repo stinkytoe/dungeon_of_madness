@@ -139,8 +139,8 @@ fn track_current_level(
         return;
     };
 
-    let Some((level_under_skeleton, level_name, level_location)) =
-        level_query.by_location(skeleton_location.get()).next()
+    let Ok((level_under_skeleton, level_name, level_location)) =
+        level_query.single_by_location(skeleton_location.get())
     else {
         info!("Skeleton is walking in space!");
         return;
@@ -185,39 +185,37 @@ fn attempt_spawn_level(
     const CENTER_OFFSET: Vec2 = Vec2::new(LEVEL_SIZE / 2.0, -LEVEL_SIZE / 2.0);
 
     if level_query
-        .by_location(attempt_level_location + CENTER_OFFSET)
-        .next()
-        .is_some()
+        .single_by_location(attempt_level_location + CENTER_OFFSET)
+        .is_ok()
     {
         return;
     }
 
     let level_up_code = level_query
-        .by_location(attempt_level_location + CENTER_OFFSET + LEVEL_UP)
-        .next()
+        .single_by_location(attempt_level_location + CENTER_OFFSET + LEVEL_UP)
+        .ok()
         .map(|level_name| parse_level_code(level_name));
 
     let level_right_code = level_query
-        .by_location(attempt_level_location + CENTER_OFFSET + LEVEL_RIGHT)
-        .next()
+        .single_by_location(attempt_level_location + CENTER_OFFSET + LEVEL_RIGHT)
+        .ok()
         .map(|level_name| parse_level_code(level_name));
 
     let level_down_code = level_query
-        .by_location(attempt_level_location + CENTER_OFFSET + LEVEL_DOWN)
-        .next()
+        .single_by_location(attempt_level_location + CENTER_OFFSET + LEVEL_DOWN)
+        .ok()
         .map(|level_name| parse_level_code(level_name));
 
     let level_left_code = level_query
-        .by_location(attempt_level_location + CENTER_OFFSET + LEVEL_LEFT)
-        .next()
+        .single_by_location(attempt_level_location + CENTER_OFFSET + LEVEL_LEFT)
+        .ok()
         .map(|level_name| parse_level_code(level_name));
 
     let mut rand = rand.next_lim_u16(15);
 
     let mut fix_rand_by_code = |code: Option<u16>, wall: u16, opposite_wall: u16| {
         if let Some(code) = code {
-            let wall_at = code & opposite_wall;
-            if wall_at == 0 {
+            if code & opposite_wall == 0 {
                 rand &= wall ^ 0xF;
             } else {
                 rand |= wall;
