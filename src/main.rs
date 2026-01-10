@@ -1,6 +1,9 @@
 use core::f32;
 
 use bevy::prelude::*;
+use bevy::render::render_resource::AsBindGroup;
+use bevy::shader::ShaderRef;
+use bevy::sprite_render::{AlphaMode2d, Material2d, Material2dPlugin};
 use bevy::window::WindowMode;
 use bevy::{color::palettes::tailwind::GRAY_500, input::mouse::MouseWheel};
 use shieldtank::prelude::*;
@@ -12,6 +15,9 @@ const PROJECT_FILE: &str = "ldtk/dungeon_of_madness.ldtk";
 const SKELETON_IID: Iid = iid!("4be48e10-e920-11ef-b902-6dc2806b1269");
 const START_HALL_IID: Iid = iid!("29c72090-1030-11f0-8f0e-c7ebf6f05d5f");
 const LEVEL_SIZE: f32 = 144.0;
+
+const BACKGROUND_SHADER_PATH: &str = "shaders/background.wgsl";
+const BACKGROUND_Z: f32 = -100.0;
 
 const PLAYER_MOVE_SPEED: f32 = 90.0;
 
@@ -43,6 +49,26 @@ enum GameState {
     Playing,
 }
 
+#[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
+struct BackgroundMaterial {
+    #[texture(0)]
+    #[sampler(1)]
+    color_texture: Option<Handle<Image>>,
+}
+
+#[derive(Component)]
+struct Background;
+
+impl Material2d for BackgroundMaterial {
+    fn fragment_shader() -> ShaderRef {
+        BACKGROUND_SHADER_PATH.into()
+    }
+
+    fn alpha_mode(&self) -> bevy::sprite_render::AlphaMode2d {
+        AlphaMode2d::Mask(0.5)
+    }
+}
+
 fn parse_level_code(level_name: &str) -> u16 {
     if level_name == "Start_Hall" {
         0
@@ -51,12 +77,19 @@ fn parse_level_code(level_name: &str) -> u16 {
     }
 }
 
-fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn setup(
+    asset_server: Res<AssetServer>,
+    mut meshes: ResMut<Assets<Mesh>>,
+    mut materials: ResMut<Assets<BackgroundMaterial>>,
+    mut commands: Commands,
+) {
     commands.spawn((
         Camera2d,
         Transform::default().with_scale(Vec2::splat(CAMERA_ZOOM_DEFAULT).extend(1.0)),
     ));
 
+    // The start hall, which also contains the player skeleton in the
+    // `Entities` layer.
     commands.spawn((
         ShieldtankLevel {
             handle: asset_server.load(format!("{PROJECT_FILE}#world:Dungeon/Start_Hall")),
@@ -65,6 +98,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
         Transform::default(),
     ));
 
+    // A text banner at the bottom describing the player keybinds.
     commands.spawn((
         Text::new("Movement: WASD or Arrow Keys\nZoom in/out: Mouse Scroll"),
         TextFont {
@@ -82,19 +116,60 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>) {
             ..default()
         },
     ));
+
+    // The foreground mesh.
+    commands.spawn((
+        Mesh2d(meshes.add(Rectangle::from_corners(
+            Vec2::splat(-999.0),
+            Vec2::splat(999.0),
+        ))),
+        MeshMaterial2d(materials.add(BackgroundMaterial {
+            color_texture: Some(asset_server.load("textures/rust.png")),
+        })),
+        Transform::from_translation(Vec2::ZERO.extend(BACKGROUND_Z)),
+        Background,
+    ));
 }
 
 #[allow(clippy::type_complexity)]
 fn camera_follow_skeleton(
-    skeleton_query: QueryByIid<&Transform, (With<ShieldtankEntity>, Without<Camera2d>)>,
-    mut camera_transform: Single<&mut Transform, With<Camera2d>>,
+    skeleton_query: QueryByIid<
+        &Transform,
+        (
+            With<ShieldtankEntity>,
+            Without<Camera2d>,
+            Without<Background>,
+        ),
+    >,
+    mut camera_transform: Single<
+        &mut Transform,
+        (
+            Without<ShieldtankEntity>,
+            With<Camera2d>,
+            Without<Background>,
+        ),
+    >,
+    mut background_transform: Single<
+        &mut Transform,
+        (
+            Without<ShieldtankEntity>,
+            Without<Camera2d>,
+            With<Background>,
+        ),
+    >,
 ) {
-    let Some(skeleton_transform) = skeleton_query.get(SKELETON_IID) else {
+    let Some(Transform {
+        translation: skeleton_translation,
+        ..
+    }) = skeleton_query.get(SKELETON_IID)
+    else {
         return;
     };
 
     let camera_z = camera_transform.translation.z;
-    camera_transform.translation = skeleton_transform.translation.with_z(camera_z);
+
+    camera_transform.translation = skeleton_translation.with_z(camera_z);
+    background_transform.translation = skeleton_translation.with_z(BACKGROUND_Z);
 }
 
 fn camera_zoom_commands(
@@ -109,7 +184,7 @@ fn camera_zoom_commands(
     }
 }
 
-fn wait_for_level(
+fn wait_for_start_hall(
     level_query: QueryByIid<Entity, (With<ShieldtankLevel>, With<ShieldtankGlobalBounds>)>,
     mut next_state: ResMut<NextState<GameState>>,
     mut commands: Commands,
@@ -129,7 +204,7 @@ fn wait_for_level(
 fn track_current_level(
     skeleton_query: QueryByIid<
         ShieldtankLocation,
-        (With<ShieldtankEntity>, Changed<GlobalTransform>),
+        (With<ShieldtankEntity>, ShieldtankLocationChanged),
     >,
     level_query: QueryByGlobalBounds<(Entity, &Name, ShieldtankLocation), With<ShieldtankLevel>>,
     mut current_level: ResMut<CurrentLevel>,
@@ -180,7 +255,7 @@ fn attempt_spawn_level(
     mut commands: Commands,
 ) {
     let attempt_level_location: Vec2 = **attemt_level_location;
-    info!("Attempting spawn level at: {attempt_level_location}");
+    info!("Spawning new level at: {attempt_level_location}");
 
     const CENTER_OFFSET: Vec2 = Vec2::new(LEVEL_SIZE / 2.0, -LEVEL_SIZE / 2.0);
 
@@ -354,6 +429,7 @@ fn main() {
             .set(window_plugin_settings)
             .set(image_plugin_settings)
             .set(asset_plugin_settings),
+        Material2dPlugin::<BackgroundMaterial>::default(),
         ShieldtankPlugins,
     ));
 
@@ -369,7 +445,10 @@ fn main() {
 
     app.add_systems(Startup, setup);
 
-    app.add_systems(Update, wait_for_level.run_if(in_state(GameState::Loading)));
+    app.add_systems(
+        Update,
+        wait_for_start_hall.run_if(in_state(GameState::Loading)),
+    );
 
     app.add_systems(
         Update,
@@ -384,5 +463,6 @@ fn main() {
 
     app.add_observer(attempt_spawn_level);
 
+    let _x = 3_i64;
     app.run();
 }
