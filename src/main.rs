@@ -1,4 +1,4 @@
-use core::f32;
+use std::f32::consts::FRAC_1_SQRT_2;
 
 use bevy::prelude::*;
 use bevy::render::render_resource::AsBindGroup;
@@ -13,7 +13,9 @@ const WINDOW_RESOLUTION: UVec2 = UVec2::new(1280, 960);
 
 const PROJECT_FILE: &str = "ldtk/dungeon_of_madness.ldtk";
 const SKELETON_IID: Iid = iid!("4be48e10-e920-11ef-b902-6dc2806b1269");
+const SKELETON_IID_U128: u128 = SKELETON_IID.as_u128();
 const START_HALL_IID: Iid = iid!("29c72090-1030-11f0-8f0e-c7ebf6f05d5f");
+const START_HALL_IID_U128: u128 = START_HALL_IID.as_u128();
 const LEVEL_SIZE: f32 = 144.0;
 
 const BACKGROUND_SHADER_PATH: &str = "shaders/background.wgsl";
@@ -102,7 +104,7 @@ fn setup(
     commands.spawn((
         Text::new("Movement: WASD or Arrow Keys\nZoom in/out: Mouse Scroll"),
         TextFont {
-            font: asset_server.load("fonts/IMMORTAL.ttf"),
+            font: FontSource::Handle(asset_server.load("fonts/IMMORTAL.ttf")),
             font_size: 22.0,
             ..Default::default()
         },
@@ -133,7 +135,8 @@ fn setup(
 
 #[allow(clippy::type_complexity)]
 fn camera_follow_skeleton(
-    skeleton_query: QueryByIid<
+    skeleton_transform: SingleByIid<
+        SKELETON_IID_U128,
         &Transform,
         (
             With<ShieldtankEntity>,
@@ -158,18 +161,12 @@ fn camera_follow_skeleton(
         ),
     >,
 ) {
-    let Some(Transform {
-        translation: skeleton_translation,
-        ..
-    }) = skeleton_query.get(SKELETON_IID)
-    else {
-        return;
-    };
+    let skeleton_location = skeleton_transform.translation;
 
     let camera_z = camera_transform.translation.z;
 
-    camera_transform.translation = skeleton_translation.with_z(camera_z);
-    background_transform.translation = skeleton_translation.with_z(BACKGROUND_Z);
+    camera_transform.translation = skeleton_location.with_z(camera_z);
+    background_transform.translation = skeleton_location.with_z(BACKGROUND_Z);
 }
 
 fn camera_zoom_commands(
@@ -185,37 +182,30 @@ fn camera_zoom_commands(
 }
 
 fn wait_for_start_hall(
-    level_query: QueryByIid<Entity, (With<ShieldtankLevel>, With<ShieldtankGlobalBounds>)>,
+    level_query: SingleByIid<START_HALL_IID_U128, Entity, With<ShieldtankGlobalBounds>>,
     mut next_state: ResMut<NextState<GameState>>,
     mut commands: Commands,
 ) {
-    if let Some(start_hall) = level_query.get(START_HALL_IID) {
-        commands.insert_resource(CurrentLevel(start_hall));
+    commands.insert_resource(CurrentLevel(*level_query));
 
-        commands.trigger(AttemptSpawnLevel(LEVEL_UP));
-        commands.trigger(AttemptSpawnLevel(LEVEL_RIGHT));
-        commands.trigger(AttemptSpawnLevel(LEVEL_DOWN));
-        commands.trigger(AttemptSpawnLevel(LEVEL_LEFT));
+    commands.trigger(AttemptSpawnLevel(LEVEL_UP));
+    commands.trigger(AttemptSpawnLevel(LEVEL_RIGHT));
+    commands.trigger(AttemptSpawnLevel(LEVEL_DOWN));
+    commands.trigger(AttemptSpawnLevel(LEVEL_LEFT));
 
-        next_state.set(GameState::Playing);
-    }
+    next_state.set(GameState::Playing);
 }
 
 fn track_current_level(
-    skeleton_query: QueryByIid<
-        ShieldtankLocation,
-        (With<ShieldtankEntity>, ShieldtankLocationChanged),
-    >,
+    skeleton_location: SingleByIid<SKELETON_IID_U128, &GlobalTransform, ShieldtankLocationChanged>,
     level_query: QueryByGlobalBounds<(Entity, &Name, ShieldtankLocation), With<ShieldtankLevel>>,
     mut current_level: ResMut<CurrentLevel>,
     mut commands: Commands,
 ) {
-    let Some(skeleton_location) = skeleton_query.get(SKELETON_IID) else {
-        return;
-    };
+    let skeleton_location = skeleton_location.translation().truncate();
 
     let Ok((level_under_skeleton, level_name, level_location)) =
-        level_query.single_by_location(skeleton_location.get())
+        level_query.single_by_location(skeleton_location)
     else {
         info!("Skeleton is walking in space!");
         return;
@@ -319,7 +309,8 @@ fn player_keyboard_commands(
     keyboard_input: Res<ButtonInput<KeyCode>>,
     grid_query: GridValueQuery,
     level_query: QueryByGlobalBounds<(), With<ShieldtankLevel>>,
-    mut skeleton_query: QueryByIid<
+    mut skeleton_query: SingleByIid<
+        SKELETON_IID_U128,
         (
             &ShieldtankGlobalBounds,
             &mut ShieldtankTile,
@@ -328,9 +319,7 @@ fn player_keyboard_commands(
         With<ShieldtankEntity>,
     >,
 ) {
-    let Some((global_bounds, mut tile, mut location)) = skeleton_query.get_mut(SKELETON_IID) else {
-        return;
-    };
+    let (global_bounds, ref mut tile, ref mut location) = *skeleton_query;
 
     if !level_query.any(location.get()) {
         return;
@@ -362,13 +351,13 @@ fn player_keyboard_commands(
     // Construct a direction vector
     let dir = match dir {
         KEY_UP => Vec2::new(0.0, 1.0),
-        KEY_UP_RIGHT => Vec2::new(f32::consts::FRAC_1_SQRT_2, f32::consts::FRAC_1_SQRT_2),
+        KEY_UP_RIGHT => Vec2::new(FRAC_1_SQRT_2, FRAC_1_SQRT_2),
         KEY_RIGHT => Vec2::new(1.0, 0.0),
-        KEY_DOWN_RIGHT => Vec2::new(f32::consts::FRAC_1_SQRT_2, -f32::consts::FRAC_1_SQRT_2),
+        KEY_DOWN_RIGHT => Vec2::new(FRAC_1_SQRT_2, -FRAC_1_SQRT_2),
         KEY_DOWN => Vec2::new(0.0, -1.0),
-        KEY_DOWN_LEFT => Vec2::new(-f32::consts::FRAC_1_SQRT_2, -f32::consts::FRAC_1_SQRT_2),
+        KEY_DOWN_LEFT => Vec2::new(-FRAC_1_SQRT_2, -FRAC_1_SQRT_2),
         KEY_LEFT => Vec2::new(-1.0, 0.0),
-        KEY_UP_LEFT => Vec2::new(-f32::consts::FRAC_1_SQRT_2, f32::consts::FRAC_1_SQRT_2),
+        KEY_UP_LEFT => Vec2::new(-FRAC_1_SQRT_2, FRAC_1_SQRT_2),
         _ => return,
     };
 
@@ -398,8 +387,7 @@ fn main() {
             bevy_winit=off,\
             calloop=off,\
             bevy_ldtk_asset=info,\
-            shieldtank=info,\
-            dungeon_of_madness=debug"
+            shieldtank=info"
             .into(),
         ..default()
     };
