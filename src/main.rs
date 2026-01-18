@@ -12,10 +12,8 @@ use tinyrand::{Rand as _, StdRand};
 const WINDOW_RESOLUTION: UVec2 = UVec2::new(1280, 960);
 
 const PROJECT_FILE: &str = "ldtk/dungeon_of_madness.ldtk";
-const SKELETON_IID: Iid = iid!("4be48e10-e920-11ef-b902-6dc2806b1269");
-const SKELETON_IID_U128: u128 = SKELETON_IID.as_u128();
-const START_HALL_IID: Iid = iid!("29c72090-1030-11f0-8f0e-c7ebf6f05d5f");
-const START_HALL_IID_U128: u128 = START_HALL_IID.as_u128();
+const SKELETON_IID: u128 = iid!("4be48e10-e920-11ef-b902-6dc2806b1269").as_u128();
+const START_HALL_IID: u128 = iid!("29c72090-1030-11f0-8f0e-c7ebf6f05d5f").as_u128();
 const LEVEL_SIZE: f32 = 144.0;
 
 const BACKGROUND_SHADER_PATH: &str = "shaders/background.wgsl";
@@ -104,7 +102,7 @@ fn setup(
     commands.spawn((
         Text::new("Movement: WASD or Arrow Keys\nZoom in/out: Mouse Scroll"),
         TextFont {
-            font: FontSource::Handle(asset_server.load("fonts/IMMORTAL.ttf")),
+            font: asset_server.load("fonts/IMMORTAL.ttf"),
             font_size: 22.0,
             ..Default::default()
         },
@@ -136,7 +134,7 @@ fn setup(
 #[allow(clippy::type_complexity)]
 fn camera_follow_skeleton(
     skeleton_transform: SingleByIid<
-        SKELETON_IID_U128,
+        SKELETON_IID,
         &Transform,
         (
             With<ShieldtankEntity>,
@@ -182,7 +180,7 @@ fn camera_zoom_commands(
 }
 
 fn wait_for_start_hall(
-    level_query: SingleByIid<START_HALL_IID_U128, Entity, With<ShieldtankGlobalBounds>>,
+    level_query: SingleByIid<START_HALL_IID, Entity, With<ShieldtankWorldBounds>>,
     mut next_state: ResMut<NextState<GameState>>,
     mut commands: Commands,
 ) {
@@ -197,8 +195,15 @@ fn wait_for_start_hall(
 }
 
 fn track_current_level(
-    skeleton_location: SingleByIid<SKELETON_IID_U128, &GlobalTransform, ShieldtankLocationChanged>,
-    level_query: QueryByGlobalBounds<(Entity, &Name, ShieldtankLocation), With<ShieldtankLevel>>,
+    skeleton_location: SingleByIid<
+        SKELETON_IID,
+        &GlobalTransform,
+        // ShieldtankLocationChanged
+    >,
+    level_query: QueryByGlobalBounds<
+        (Entity, &Name, ShieldtankWorldLocation),
+        With<ShieldtankLevel>,
+    >,
     mut current_level: ResMut<CurrentLevel>,
     mut commands: Commands,
 ) {
@@ -310,11 +315,11 @@ fn player_keyboard_commands(
     grid_query: GridValueQuery,
     level_query: QueryByGlobalBounds<(), With<ShieldtankLevel>>,
     mut skeleton_query: SingleByIid<
-        SKELETON_IID_U128,
+        SKELETON_IID,
         (
-            &ShieldtankGlobalBounds,
+            &ShieldtankWorldBounds,
             &mut ShieldtankTile,
-            ShieldtankLocationMut,
+            ShieldtankWorldLocationMut,
         ),
         With<ShieldtankEntity>,
     >,
@@ -423,10 +428,10 @@ fn main() {
 
     #[cfg(debug_assertions)]
     {
-        // use bevy_inspector_egui::bevy_egui::EguiPlugin;
-        // use bevy_inspector_egui::quick::WorldInspectorPlugin;
-        // app.add_plugins(EguiPlugin::default())
-        //     .add_plugins(WorldInspectorPlugin::default());
+        use bevy_inspector_egui::bevy_egui::EguiPlugin;
+        use bevy_inspector_egui::quick::WorldInspectorPlugin;
+        app.add_plugins(EguiPlugin::default())
+            .add_plugins(WorldInspectorPlugin::default());
     }
 
     app.init_state::<GameState>();
@@ -451,6 +456,5 @@ fn main() {
 
     app.add_observer(attempt_spawn_level);
 
-    let _x = 3_i64;
     app.run();
 }
