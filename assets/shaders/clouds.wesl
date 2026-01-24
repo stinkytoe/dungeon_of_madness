@@ -8,11 +8,13 @@ struct VertexOutput {
 	@location(2) uv: vec2<f32>,
 }
 
-struct BackgroundMaterial {
-  params: vec4<f32>,
-}
+//struct BackgroundMaterial {
+//  params0: vec4<f32>,
+//  params1: vec4<f32>,
+//}
 
-@group(2) @binding(0) var<uniform> material: BackgroundMaterial;
+@group(2) @binding(0) var<uniform> params0: vec4<f32>;
+@group(2) @binding(1) var<uniform> params1: vec4<f32>;
 
 fn random3(c: vec3<f32>) -> vec3<f32> {
 	let j = 4096.0*sin(dot(c, vec3(17.0, 59.4, 15.0)));
@@ -81,14 +83,19 @@ fn simplex3d_fractal(m: vec3<f32>) -> f32 {
 fn fragment(
 	mesh: VertexOutput,
 ) -> @location(0) vec4<f32> {	
-	let speed = material.params.x;
-	let scale = material.params.yz;
-  let time = material.params.w;
+	let speed = params0.x;
+	let scale = params0.yz;
+  let time = params0.w;
 
-	let drift = vec2(1.0, 0.1) * speed * 30.0;
+	let drift_gain = params1.x;
+	let color_gain = params1.y;
+	let color_offset = params1.z;
+	let alpha = params1.w;
 
-  let p = mesh.uv * scale + drift + vec2(100.0);
-	let p3 = vec3(p, time*speed);
+	let drift = vec2(1.0, 0.1) * time * speed * drift_gain;
+
+  let p = mesh.uv * scale + vec2(100.0);
+	let p3 = vec3(p + drift, time * speed);
 
 	var value: f32 = simplex3d_fractal(p3 * 8.0 + 8.0);
 
@@ -96,7 +103,7 @@ fn fragment(
 	value *= 0.5 * smoothstep(0.0, 0.005, abs(0.6 - p.x));
 
 	var color = vec3(0.7, 0.7, 0.9) * value;
-	color = 1.5 * color - 0.25;
+	color = color_gain * color + color_offset;
 
-	return vec4(color, 0.25);
+	return vec4(color, alpha);
 }

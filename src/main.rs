@@ -52,13 +52,16 @@ enum GameState {
 #[derive(Asset, AsBindGroup, Debug, Clone, Reflect)]
 struct CloudsMaterial {
     #[uniform(0)]
-    params: Vec4,
+    params0: Vec4,
+    #[uniform(1)]
+    params1: Vec4,
 }
 
 impl Default for CloudsMaterial {
     fn default() -> Self {
         Self {
-            params: Vec4::new(0.015, 2.0, 15.0, 0.0),
+            params0: Vec4::new(0.015, 2.0, 15.0, 0.0),
+            params1: Vec4::new(0.5, 1.5, -0.25, 0.25),
         }
     }
 }
@@ -146,7 +149,7 @@ fn cloud_material_update_time(
     mut materials: ResMut<Assets<CloudsMaterial>>,
 ) {
     let material = materials.get_mut(*material).unwrap();
-    material.params.w = time.elapsed_secs();
+    material.params0.w = time.elapsed_secs();
 }
 
 #[allow(clippy::type_complexity)]
