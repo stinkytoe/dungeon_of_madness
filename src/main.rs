@@ -16,8 +16,8 @@ const SKELETON_IID: u128 = iid!("4be48e10-e920-11ef-b902-6dc2806b1269").as_u128(
 const START_HALL_IID: u128 = iid!("29c72090-1030-11f0-8f0e-c7ebf6f05d5f").as_u128();
 const LEVEL_SIZE: f32 = 144.0;
 
-const BACKGROUND_SHADER_PATH: &str = "shaders/background.wgsl";
-const BACKGROUND_Z: f32 = -100.0;
+const CLOUDS_SHADER_PATH: &str = "shaders/clouds.wesl";
+const CLOUDS_Z: f32 = 900.0;
 
 const PLAYER_MOVE_SPEED: f32 = 90.0;
 
@@ -49,23 +49,30 @@ enum GameState {
     Playing,
 }
 
-#[derive(Asset, TypePath, AsBindGroup, Debug, Clone)]
-struct BackgroundMaterial {
-    #[texture(0)]
-    #[sampler(1)]
-    color_texture: Option<Handle<Image>>,
+#[derive(Asset, AsBindGroup, Debug, Clone, Reflect)]
+struct CloudsMaterial {
+    #[uniform(0)]
+    params: Vec4,
+}
+
+impl Default for CloudsMaterial {
+    fn default() -> Self {
+        Self {
+            params: Vec4::new(0.015, 2.0, 15.0, 0.0),
+        }
+    }
 }
 
 #[derive(Component)]
-struct Background;
+struct Clouds;
 
-impl Material2d for BackgroundMaterial {
+impl Material2d for CloudsMaterial {
     fn fragment_shader() -> ShaderRef {
-        BACKGROUND_SHADER_PATH.into()
+        CLOUDS_SHADER_PATH.into()
     }
 
     fn alpha_mode(&self) -> bevy::sprite_render::AlphaMode2d {
-        AlphaMode2d::Mask(0.5)
+        AlphaMode2d::Blend
     }
 }
 
@@ -80,7 +87,7 @@ fn parse_level_code(level_name: &str) -> u16 {
 fn setup(
     asset_server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<BackgroundMaterial>>,
+    mut materials: ResMut<Assets<CloudsMaterial>>,
     mut commands: Commands,
 ) {
     commands.spawn((
@@ -100,6 +107,7 @@ fn setup(
 
     // A text banner at the bottom describing the player keybinds.
     commands.spawn((
+        Name::new("Text Label"),
         Text::new("Movement: WASD or Arrow Keys\nZoom in/out: Mouse Scroll"),
         TextFont {
             font: asset_server.load("fonts/IMMORTAL.ttf"),
@@ -119,16 +127,26 @@ fn setup(
 
     // The foreground mesh.
     commands.spawn((
+        Name::new("Clouds"),
         Mesh2d(meshes.add(Rectangle::from_corners(
-            Vec2::splat(-999.0),
-            Vec2::splat(999.0),
+            // -WINDOW_RESOLUTION.as_vec2() / 2.0,
+            // WINDOW_RESOLUTION.as_vec2() / 2.0,
+            Vec2::splat(-9999.0),
+            Vec2::splat(9999.0),
         ))),
-        MeshMaterial2d(materials.add(BackgroundMaterial {
-            color_texture: Some(asset_server.load("textures/rust.png")),
-        })),
-        Transform::from_translation(Vec2::ZERO.extend(BACKGROUND_Z)),
-        Background,
+        MeshMaterial2d(materials.add(CloudsMaterial::default())),
+        Transform::from_translation(Vec2::ZERO.extend(CLOUDS_Z)),
+        Clouds,
     ));
+}
+
+fn cloud_material_update_time(
+    time: Res<Time>,
+    material: Single<&MeshMaterial2d<CloudsMaterial>>,
+    mut materials: ResMut<Assets<CloudsMaterial>>,
+) {
+    let material = materials.get_mut(*material).unwrap();
+    material.params.w = time.elapsed_secs();
 }
 
 #[allow(clippy::type_complexity)]
@@ -136,27 +154,15 @@ fn camera_follow_skeleton(
     skeleton_transform: SingleByIid<
         SKELETON_IID,
         &Transform,
-        (
-            With<ShieldtankEntity>,
-            Without<Camera2d>,
-            Without<Background>,
-        ),
+        (With<ShieldtankEntity>, Without<Camera2d>, Without<Clouds>),
     >,
     mut camera_transform: Single<
         &mut Transform,
-        (
-            Without<ShieldtankEntity>,
-            With<Camera2d>,
-            Without<Background>,
-        ),
+        (Without<ShieldtankEntity>, With<Camera2d>, Without<Clouds>),
     >,
-    mut background_transform: Single<
+    mut cloud_transform: Single<
         &mut Transform,
-        (
-            Without<ShieldtankEntity>,
-            Without<Camera2d>,
-            With<Background>,
-        ),
+        (Without<ShieldtankEntity>, Without<Camera2d>, With<Clouds>),
     >,
 ) {
     let skeleton_location = skeleton_transform.translation;
@@ -164,7 +170,7 @@ fn camera_follow_skeleton(
     let camera_z = camera_transform.translation.z;
 
     camera_transform.translation = skeleton_location.with_z(camera_z);
-    background_transform.translation = skeleton_location.with_z(BACKGROUND_Z);
+    cloud_transform.translation = skeleton_location.with_z(CLOUDS_Z);
 }
 
 fn camera_zoom_commands(
@@ -422,7 +428,7 @@ fn main() {
             .set(window_plugin_settings)
             .set(image_plugin_settings)
             .set(asset_plugin_settings),
-        Material2dPlugin::<BackgroundMaterial>::default(),
+        Material2dPlugin::<CloudsMaterial>::default(),
         ShieldtankPlugins,
     ));
 
@@ -433,6 +439,8 @@ fn main() {
         app.add_plugins(EguiPlugin::default())
             .add_plugins(WorldInspectorPlugin::default());
     }
+
+    app.register_asset_reflect::<CloudsMaterial>();
 
     app.init_state::<GameState>();
 
@@ -446,6 +454,7 @@ fn main() {
     app.add_systems(
         Update,
         (
+            cloud_material_update_time,
             camera_follow_skeleton,
             camera_zoom_commands,
             track_current_level,
