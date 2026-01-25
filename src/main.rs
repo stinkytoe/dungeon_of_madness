@@ -111,7 +111,6 @@ struct Clouds;
 /// - If the level name is `"Start_Hall"`, then return zero.
 /// - Otherwise, we expect the level name to be in the form of `"Level_n"` where
 ///   _n_ is between 0 to 15.
-///     
 fn parse_level_code(level_name: &str) -> u16 {
     match level_name {
         "Start_Hall" => 0,
@@ -119,7 +118,7 @@ fn parse_level_code(level_name: &str) -> u16 {
             let code = level_name[6..]
                 .parse()
                 .expect("Couldn't parse code: {rest}");
-            if (0..=15).contains(&code) {
+            if (0..15).contains(&code) {
                 code
             } else {
                 panic!("Code out of range! {code}")
