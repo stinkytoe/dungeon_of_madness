@@ -494,7 +494,7 @@ fn main() {
             bevy_ldtk_asset=info,\
             shieldtank=info"
             .into(),
-        ..default()
+        ..Default::default()
     };
 
     let window_plugin_settings: WindowPlugin = WindowPlugin {
@@ -509,19 +509,13 @@ fn main() {
 
     let image_plugin_settings = ImagePlugin::default_nearest();
 
-    let asset_plugin_settings = AssetPlugin {
-        meta_check: bevy::asset::AssetMetaCheck::Never,
-        ..Default::default()
-    };
-
     let mut app = App::new();
 
     app.add_plugins((
         DefaultPlugins
             .set(log_plugin_settings)
             .set(window_plugin_settings)
-            .set(image_plugin_settings)
-            .set(asset_plugin_settings),
+            .set(image_plugin_settings),
         Material2dPlugin::<CloudsMaterial>::default(),
         ShieldtankPlugins,
     ));
