@@ -332,10 +332,11 @@ fn attempt_spawn_level(
     let attempt_level_location: Vec2 = **attemt_level_location;
     info!("Spawning new level at: {attempt_level_location}");
 
-    const CENTER_OFFSET: Vec2 = Vec2::new(LEVEL_SIZE / 2.0, -LEVEL_SIZE / 2.0);
-
     // QueryByGlobalBounds is inclusive for all bounds, so we sample from the
     // center instead of attempt_level_location, which is the upper left corner.
+    const CENTER_OFFSET: Vec2 = Vec2::new(LEVEL_SIZE / 2.0, -LEVEL_SIZE / 2.0);
+
+    // If a level already exists here, we return early.
     if level_query
         .single_by_location(attempt_level_location + CENTER_OFFSET)
         .is_ok()
