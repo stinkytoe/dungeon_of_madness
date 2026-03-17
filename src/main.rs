@@ -1,17 +1,19 @@
 use std::f32::consts::FRAC_1_SQRT_2;
 
+use bevy::color::palettes::tailwind::GRAY_500;
+use bevy::input::mouse::MouseWheel;
 use bevy::prelude::*;
-use bevy::render::render_resource::AsBindGroup;
+use bevy::render::render_resource::{AsBindGroup, ShaderType};
 use bevy::shader::ShaderRef;
 use bevy::sprite_render::{AlphaMode2d, Material2d, Material2dPlugin};
 use bevy::window::WindowMode;
-use bevy::{color::palettes::tailwind::GRAY_500, input::mouse::MouseWheel};
 use shieldtank::prelude::*;
 use tinyrand::{Rand as _, StdRand};
 
 const WINDOW_RESOLUTION: UVec2 = UVec2::new(1280, 960);
 
 const PROJECT_FILE: &str = "ldtk/dungeon_of_madness.ldtk";
+const DUNGEON_IID: u128 = iid!("6b6032f1-e920-11ef-b902-3d698dd98675").as_u128();
 const SKELETON_IID: u128 = iid!("4be48e10-e920-11ef-b902-6dc2806b1269").as_u128();
 const START_HALL_IID: u128 = iid!("29c72090-1030-11f0-8f0e-c7ebf6f05d5f").as_u128();
 const LEVEL_SIZE: f32 = 144.0;
@@ -61,6 +63,28 @@ enum GameState {
     Playing,
 }
 
+#[derive(Debug, Clone, ShaderType, Reflect)]
+pub struct CloudsParam0 {
+    speed: f32,
+    timer: f32,
+    scale: Vec2,
+}
+
+#[derive(Debug, Clone, ShaderType, Reflect)]
+pub struct CloudsParam1 {
+    color_gain: f32,
+    color_offset: f32,
+    alpha: f32,
+    _pad: f32,
+}
+
+#[derive(Debug, Clone, ShaderType, Reflect)]
+pub struct CloudsParam2 {
+    parallax: Vec2,
+    parallax_factor: f32,
+    _pad: f32,
+}
+
 /// A custom 2d materal for drawing the clouds layer overlay.
 ///
 /// Normally you wouldn't parameterize so many things, I just wanted to allow
@@ -68,24 +92,33 @@ enum GameState {
 #[derive(Asset, AsBindGroup, Debug, Clone, Reflect)]
 struct CloudsMaterial {
     #[uniform(0)]
-    params0: Vec4,
+    params0: CloudsParam0,
     #[uniform(1)]
-    params1: Vec4,
+    params1: CloudsParam1,
+    #[uniform(2)]
+    params2: CloudsParam2,
 }
 
 impl Default for CloudsMaterial {
     fn default() -> Self {
         Self {
-            params0: Vec4::new(
-                0.015, // Overall speed.
-                2.0, 15.0, // Overall scale.
-                0.0,  // The timer. Mutated in [cloud_material_update_time].
-            ),
-            params1: Vec4::new(
-                0.5, // The speed multiplier for the left scrolling of the clouds.
-                1.5, -0.25, // The linear transform we apply to the color.
-                0.25,  // The alpha of the layer.
-            ),
+            params0: CloudsParam0 {
+                speed: 0.015,
+                timer: 0.0,
+                scale: Vec2::new(2.0, 15.0),
+            },
+
+            params1: CloudsParam1 {
+                color_gain: 1.5,
+                color_offset: -0.25,
+                alpha: 0.25,
+                _pad: 0.0,
+            },
+            params2: CloudsParam2 {
+                parallax: Vec2::ZERO,
+                parallax_factor: 0.0002,
+                _pad: 0.0,
+            },
         }
     }
 }
@@ -149,17 +182,26 @@ fn setup(
 
     // The start hall, which also contains the player skeleton in the
     // `Entities` layer.
+    //
+    // We include `ChildAutoloadFilter::None`, and then explicitly load "Start Hall",
+    // so we can programitacally add levels later.
     commands.spawn((
-        ShieldtankLevel {
-            handle: asset_server.load(format!("{PROJECT_FILE}#world:Dungeon/Start_Hall")),
-            ..Default::default()
+        ShieldtankWorld {
+            handle: asset_server.load(format!("{PROJECT_FILE}#world:Dungeon")),
         },
-        Transform::default(),
+        ChildAutoloadFilter::None,
+        children![(
+            ShieldtankLevel {
+                handle: asset_server.load(format!("{PROJECT_FILE}#world:Dungeon/Start_Hall")),
+                ..Default::default()
+            },
+            Transform::default(),
+        )],
     ));
 
     // A text banner at the bottom describing the player keybinds.
     commands.spawn((
-        Name::new("Text Label"),
+        Name::new("Keys description"),
         Text::new("Movement: WASD or Arrow Keys\nZoom in/out: Mouse Scroll"),
         TextFont {
             font: asset_server.load("fonts/IMMORTAL.ttf"),
@@ -197,7 +239,19 @@ fn cloud_material_update_time(
     mut materials: ResMut<Assets<CloudsMaterial>>,
 ) {
     let material = materials.get_mut(*material).unwrap();
-    material.params0.w = time.elapsed_secs();
+    material.params0.timer = time.elapsed_secs();
+}
+
+fn cloud_material_update_parallax(
+    material: Single<&MeshMaterial2d<CloudsMaterial>>,
+    mut materials: ResMut<Assets<CloudsMaterial>>,
+    skeleton_transform: SingleByIid<SKELETON_IID, &Transform, Changed<Transform>>,
+) {
+    let material = materials.get_mut(*material).unwrap();
+
+    let skeleton_translation = skeleton_transform.translation;
+
+    material.params2.parallax = skeleton_translation.truncate();
 }
 
 /// Move the camera and clouds mesh to always be centered over the player
@@ -323,6 +377,7 @@ fn track_current_level(
 /// The observer which responds to the [AttemptSpawnLevel] event.
 fn attempt_spawn_level(
     attemt_level_location: On<AttemptSpawnLevel>,
+    dungeon: SingleByIid<DUNGEON_IID, Entity>,
     level_query: QueryByGlobalBounds<&Name, With<ShieldtankLevel>>,
     asset_server: Res<AssetServer>,
     mut rand: Local<StdRand>,
@@ -391,7 +446,7 @@ fn attempt_spawn_level(
 
     // Spawn the new level, using the bevy_ldtk_asset asset path.
     let new_level_asset_label = format!("{PROJECT_FILE}#world:Dungeon/Level_{rand}");
-    commands.spawn((
+    commands.entity(*dungeon).with_child((
         ShieldtankLevel {
             handle: asset_server.load(new_level_asset_label),
             ..Default::default()
@@ -487,7 +542,9 @@ fn player_keyboard_commands(
 fn main() {
     let log_plugin_settings = bevy::log::LogPlugin {
         level: bevy::log::Level::WARN,
-        filter: "wgpu_hal=off,\
+        filter: "\
+            gilrs=off,\
+            wgpu_hal=off,\
             winit=off,\
             bevy_winit=off,\
             calloop=off,\
@@ -543,6 +600,7 @@ fn main() {
         Update,
         (
             cloud_material_update_time,
+            cloud_material_update_parallax,
             camera_and_clouds_follow_skeleton,
             camera_mouse_wheel_zoom,
             track_current_level,

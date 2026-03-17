@@ -1,6 +1,6 @@
 // Clouds based on simplex noise
 //
-// Tranlated by hand from " 3d simplex noise" by nikat
+// Tranlated by hand from "3d simplex noise" by nikat
 // from: https://www.shadertoy.com/view/XsX3zB
 
 struct VertexOutput {
@@ -8,8 +8,28 @@ struct VertexOutput {
 	@location(2) uv: vec2<f32>,
 }
 
-@group(2) @binding(0) var<uniform> params0: vec4<f32>;
-@group(2) @binding(1) var<uniform> params1: vec4<f32>;
+struct CloudsParam0 {
+    speed: f32,
+    timer: f32,
+    scale: vec2<f32>,
+}
+
+struct CloudsParam1 {
+    color_gain: f32,
+    color_offset: f32,
+    alpha: f32,
+    _pad: f32,
+}
+
+struct CloudsParam2 {
+    parallax: vec2<f32>,
+    parallax_factor: f32,
+    _pad: f32,
+}
+
+@group(2) @binding(0) var<uniform> params0: CloudsParam0;
+@group(2) @binding(1) var<uniform> params1: CloudsParam1;
+@group(2) @binding(2) var<uniform> params2: CloudsParam2;
 
 fn random3(c: vec3<f32>) -> vec3<f32> {
 	let j = 4096.0*sin(dot(c, vec3(17.0, 59.4, 15.0)));
@@ -78,19 +98,21 @@ fn simplex3d_fractal(m: vec3<f32>) -> f32 {
 fn fragment(
 	mesh: VertexOutput,
 ) -> @location(0) vec4<f32> {	
-	let speed = params0.x;
-	let scale = params0.yz;
-  let time = params0.w;
+	let speed = params0.speed;
+	let time = params0.timer;
+	let scale = params0.scale;
 
-	let drift_gain = params1.x;
-	let color_gain = params1.y;
-	let color_offset = params1.z;
-	let alpha = params1.w;
+	let color_gain = params1.color_gain;
+	let color_offset = params1.color_offset;
+	let alpha = params1.alpha;
 
-	let drift = vec2(1.0, 0.1) * time * speed * drift_gain;
+	let parallax = params2.parallax;
+	let parallax_factor = params2.parallax_factor;
 
-  let p = mesh.uv * scale + vec2(100.0);
-	let p3 = vec3(p + drift, time * speed);
+	let offset = parallax * parallax_factor * vec2(-1.0, 1.0) * scale;
+
+  let p = mesh.uv * scale + parallax * parallax_factor;
+	let p3 = vec3(p, time * speed);
 
 	var value: f32 = simplex3d_fractal(p3 * 8.0 + 8.0);
 
