@@ -107,11 +107,11 @@ fn fragment(
 	let alpha = params1.alpha;
 
 	let parallax = params2.parallax;
-	let parallax_factor = params2.parallax_factor;
+	let parallax_factor = params2.parallax_factor * 0.0001;
 
-	let offset = parallax * parallax_factor * vec2(-1.0, 1.0) * scale;
+	let offset = parallax * parallax_factor * vec2(1.0, -1.0) * scale;
 
-  let p = mesh.uv * scale + parallax * parallax_factor;
+  let p = mesh.uv * scale + offset;
 	let p3 = vec3(p, time * speed);
 
 	var value: f32 = simplex3d_fractal(p3 * 8.0 + 8.0);

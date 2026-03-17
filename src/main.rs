@@ -116,7 +116,7 @@ impl Default for CloudsMaterial {
             },
             params2: CloudsParam2 {
                 parallax: Vec2::ZERO,
-                parallax_factor: 0.0002,
+                parallax_factor: 0.65,
                 _pad: 0.0,
             },
         }
