@@ -186,12 +186,12 @@ fn setup(
     // We include `ChildAutoloadFilter::None`, and then explicitly load "Start Hall",
     // so we can programitacally add levels later.
     commands.spawn((
-        ShieldtankWorld {
+        LdtkWorld {
             handle: asset_server.load(format!("{PROJECT_FILE}#world:Dungeon")),
         },
         ChildAutoloadFilter::None,
         children![(
-            ShieldtankLevel {
+            LdtkLevel {
                 handle: asset_server.load(format!("{PROJECT_FILE}#world:Dungeon/Start_Hall")),
                 ..Default::default()
             },
@@ -265,15 +265,15 @@ fn camera_and_clouds_follow_skeleton(
     skeleton_transform: SingleByIid<
         SKELETON_IID,
         &Transform,
-        (With<ShieldtankEntity>, Without<Camera2d>, Without<Clouds>),
+        (With<LdtkEntity>, Without<Camera2d>, Without<Clouds>),
     >,
     mut camera_transform: Single<
         &mut Transform,
-        (Without<ShieldtankEntity>, With<Camera2d>, Without<Clouds>),
+        (Without<LdtkEntity>, With<Camera2d>, Without<Clouds>),
     >,
     mut cloud_transform: Single<
         &mut Transform,
-        (Without<ShieldtankEntity>, Without<Camera2d>, With<Clouds>),
+        (Without<LdtkEntity>, Without<Camera2d>, With<Clouds>),
     >,
 ) {
     let skeleton_location = skeleton_transform.translation;
@@ -306,7 +306,7 @@ fn camera_mouse_wheel_zoom(
 /// [attempt_spawn_level] will spawn levels in each direction, since there won't
 /// be any there already.
 fn wait_for_start_hall(
-    level_query: SingleByIid<START_HALL_IID, Entity, With<ShieldtankWorldBounds>>,
+    level_query: SingleByIid<START_HALL_IID, Entity, With<LdtkWorldBounds>>,
     mut next_state: ResMut<NextState<GameState>>,
     mut commands: Commands,
 ) {
@@ -332,10 +332,7 @@ fn track_current_level(
         &GlobalTransform,
         // ShieldtankLocationChanged
     >,
-    level_query: QueryByGlobalBounds<
-        (Entity, &Name, ShieldtankWorldLocation),
-        With<ShieldtankLevel>,
-    >,
+    level_query: QueryByWorldBounds<(Entity, &Name, ShieldtankWorldLocation), With<LdtkLevel>>,
     mut current_level: ResMut<CurrentLevel>,
     mut commands: Commands,
 ) {
@@ -378,7 +375,7 @@ fn track_current_level(
 fn attempt_spawn_level(
     attemt_level_location: On<AttemptSpawnLevel>,
     dungeon: SingleByIid<DUNGEON_IID, Entity>,
-    level_query: QueryByGlobalBounds<&Name, With<ShieldtankLevel>>,
+    level_query: QueryByWorldBounds<&Name, With<LdtkLevel>>,
     asset_server: Res<AssetServer>,
     mut rand: Local<StdRand>,
     mut commands: Commands,
@@ -447,7 +444,7 @@ fn attempt_spawn_level(
     // Spawn the new level, using the bevy_ldtk_asset asset path.
     let new_level_asset_label = format!("{PROJECT_FILE}#world:Dungeon/Level_{rand}");
     commands.entity(*dungeon).with_child((
-        ShieldtankLevel {
+        LdtkLevel {
             handle: asset_server.load(new_level_asset_label),
             ..Default::default()
         },
@@ -458,16 +455,12 @@ fn attempt_spawn_level(
 fn player_keyboard_commands(
     time: Res<Time>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    grid_query: GridValueQuery,
-    level_query: QueryByGlobalBounds<(), With<ShieldtankLevel>>,
+    grid_query: QueryGridValue,
+    level_query: QueryByWorldBounds<(), With<LdtkLevel>>,
     mut skeleton_query: SingleByIid<
         SKELETON_IID,
-        (
-            &ShieldtankWorldBounds,
-            &mut ShieldtankTile,
-            ShieldtankWorldLocationMut,
-        ),
-        With<ShieldtankEntity>,
+        (&LdtkWorldBounds, &mut LdtkTile, ShieldtankWorldLocationMut),
+        With<LdtkEntity>,
     >,
 ) {
     let (global_bounds, ref mut tile, ref mut location) = *skeleton_query;
